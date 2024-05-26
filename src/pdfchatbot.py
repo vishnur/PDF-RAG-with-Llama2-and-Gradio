@@ -3,13 +3,13 @@ import fitz
 import torch
 import gradio as gr
 from PIL import Image
-from langchain.embeddings import HuggingFaceEmbeddings
+from langchain_community.embeddings import OllamaEmbeddings
 from langchain.vectorstores import Chroma
-from langchain.llms import HuggingFacePipeline
+from langchain_community.llms import Ollama
+from langchain_community.chat_models import ChatOllama
 from langchain.chains import ConversationalRetrievalChain
 from langchain.document_loaders import PyPDFLoader
 from langchain.prompts import PromptTemplate
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
 class PDFChatBot:
     def __init__(self, config_path="../config.yaml"):
@@ -82,7 +82,7 @@ class PDFChatBot:
         """
         Load embeddings from Hugging Face and set in the config file.
         """
-        self.embeddings = HuggingFaceEmbeddings(model_name=self.config.get("modelEmbeddings"))
+        self.embeddings = OllamaEmbeddings(model="llama3")
 
     def load_vectordb(self):
         """
@@ -90,42 +90,19 @@ class PDFChatBot:
         """
         self.vectordb = Chroma.from_documents(self.documents, self.embeddings)
 
-    def load_tokenizer(self):
-        """
-        Load the tokenizer from Hugging Face and set in the config file.
-        """
-        self.tokenizer = AutoTokenizer.from_pretrained(self.config.get("autoTokenizer"))
 
     def load_model(self):
         """
         Load the causal language model from Hugging Face and set in the config file.
         """
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.config.get("autoModelForCausalLM"),
-            device_map='auto',
-            torch_dtype=torch.float32,
-            token=True,
-            load_in_8bit=False
-        )
-
-    def create_pipeline(self):
-        """
-        Create a pipeline for text generation using the loaded model and tokenizer.
-        """
-        pipe = pipeline(
-            model=self.model,
-            task='text-generation',
-            tokenizer=self.tokenizer,
-            max_new_tokens=200
-        )
-        self.pipeline = HuggingFacePipeline(pipeline=pipe)
+        self.model = ChatOllama(model="llama3")
 
     def create_chain(self):
         """
         Create a Conversational Retrieval Chain
         """
         self.chain = ConversationalRetrievalChain.from_llm(
-            self.pipeline,
+            llm=self.model,
             chain_type="stuff",
             retriever=self.vectordb.as_retriever(search_kwargs={"k": 1}),
             condense_question_prompt=self.prompt,
@@ -143,9 +120,8 @@ class PDFChatBot:
         self.documents = PyPDFLoader(file.name).load()
         self.load_embeddings()
         self.load_vectordb()
-        self.load_tokenizer()
         self.load_model()
-        self.create_pipeline()
+        #self.create_pipeline()
         self.create_chain()
 
     def generate_response(self, history, query, file):
